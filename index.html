@@ -76,7 +76,7 @@ body.chosen .head *{pointer-events:none}
 
 .deck{position:fixed;z-index:500;left:0;right:0;bottom:max(10px,env(safe-area-inset-bottom));display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;padding:10px calc(50vw - 160px) 14px;scrollbar-width:none}
 .deck::-webkit-scrollbar{display:none}
-.card{position:relative;flex:none;width:320px;scroll-snap-align:center;background:var(--paper);color:var(--ink);border-radius:18px;overflow:hidden;box-shadow:0 14px 40px #000a;transition:transform .3s,opacity .3s;opacity:.72;transform:scale(.94)}
+.card{position:relative;flex:none;width:320px;cursor:pointer;scroll-snap-align:center;background:var(--paper);color:var(--ink);border-radius:18px;overflow:hidden;box-shadow:0 14px 40px #000a;transition:transform .3s,opacity .3s;opacity:.72;transform:scale(.94)}
 .card.on{opacity:1;transform:none}
 .card.picked{outline:4px solid var(--gold)}
 .pic{position:relative;height:140px;background:#1c3a30}
@@ -288,12 +288,21 @@ map.on("click",e=>{
 });
 
 /* card ↔ map sync */
-let io;
-function observe(){
-  if(io)io.disconnect();
-  io=new IntersectionObserver(es=>{if(lock)return;es.forEach(e=>{if(e.isIntersecting&&e.intersectionRatio>.7)go(+e.target.dataset.i)})},{root:deck,threshold:[.7]});
-  deck.querySelectorAll(".card").forEach(c=>io.observe(c));
+/* the card nearest the middle of the strip is the active one */
+let st;
+function centered(){
+  const r=deck.getBoundingClientRect(),mid=r.left+r.width/2;let best=-1,bd=1e9;
+  deck.querySelectorAll(".card").forEach(c=>{const b=c.getBoundingClientRect(),d=Math.abs(b.left+b.width/2-mid);if(d<bd){bd=d;best=+c.dataset.i}});
+  return best;
 }
+function observe(){}
+deck.addEventListener("scroll",()=>{if(lock)return;clearTimeout(st);st=setTimeout(()=>{const i=centered();if(i>-1)go(i)},120)});
+/* tap any card (not its buttons/links) to jump to that place */
+deck.addEventListener("click",e=>{
+  if(e.target.closest("a,button,input,label"))return;
+  const c=e.target.closest(".card");if(!c||c.classList.contains("secret"))return;
+  go(+c.dataset.i,true);
+});
 function fly(i){const z=16,pt=map.project(active[i].ll,z).add([0,deckH()/2-30]);map.flyTo(map.unproject(pt,z),z,{duration:.9})}
 function go(i,fromMap){
   if(!active.length||i<0||i>=active.length)return;
@@ -303,7 +312,7 @@ function go(i,fromMap){
   deck.querySelectorAll(".card").forEach((el,k)=>el.classList.toggle("on",k===i));
   markers.forEach((m,k)=>m.setZIndexOffset(k===i?1000:0));
   fly(i);
-  if(fromMap){lock=true;document.getElementById("c"+i).scrollIntoView({behavior:"smooth",inline:"center",block:"nearest"});setTimeout(()=>lock=false,700)}
+  if(fromMap){lock=true;clearTimeout(st);document.getElementById("c"+i).scrollIntoView({behavior:"smooth",inline:"center",block:"nearest"});setTimeout(()=>lock=false,900)}
 }
 
 /* ================= ping Thanh's phone (ntfy.sh) ================= */
