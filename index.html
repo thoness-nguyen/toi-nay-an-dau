@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Where Are We Flying Tonight?</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,800;1,700&family=Be+Vietnam+Pro:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/*
+VOICE: playful, a little cheeky, La La Land twilight with Christmas lights. A first-date invite dressed up as a food trip around the world.
+IDEA: a departures board. She picks a country, the map "flies" there, and each restaurant is an ornament on the city map.
+PICTURE: full-screen live night map with snow and string lights; passport-stamp destinations; postcards per spot.
+COLOUR/TYPE: purple-indigo twilight, yellow-dress gold, streetlight pink, star white; Playfair Display + Be Vietnam Pro.
+LAYOUT: no vertical scroll. Step 1 a stamp board over the map; step 2 map + boarding-pass chip on top + swipeable postcards at the bottom.
+*/
+:root{--night:#120f2e;--pine:#2b2470;--paper:#fff7ea;--ink:#1c1838;--gold:#f6c945;--red:#d9417a;--pink:#e86aa8;color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--night);color:var(--paper);font:16px/1.5 "Be Vietnam Pro",system-ui,sans-serif}
+h1,h2,h3{font-family:"Playfair Display",Georgia,serif;margin:0;line-height:1.08;text-wrap:balance}
+#map{position:fixed;inset:0;background:#120f2e}
+.leaflet-tile-pane{filter:sepia(.35) hue-rotate(215deg) saturate(1.6) brightness(.95)}
+#dusk{position:fixed;inset:0;z-index:410;pointer-events:none;background:linear-gradient(180deg,#2a1f6b66 0%,#5b2a8a33 45%,#e86aa82a 100%);mix-blend-mode:screen}
+.leaflet-container{font:inherit}
+.leaflet-control-attribution{background:#120f2ecc!important;color:#a9bdb2!important;font-size:11px}
+.leaflet-control-attribution a{color:var(--gold)!important}
+.leaflet-control-zoom{margin-top:110px!important}
+.leaflet-bar a{background:var(--pine);color:var(--paper);border-color:#4a3fa0}
+#snow{position:fixed;inset:0;z-index:420;pointer-events:none}
+.lights{position:fixed;z-index:430;top:0;left:0;right:0;height:46px;pointer-events:none}
+.lights svg{width:100%;height:100%}
+.bulb{animation:tw 2.4s ease-in-out infinite}.bulb:nth-child(3n){animation-delay:-.8s}.bulb:nth-child(3n+1){animation-delay:-1.6s}
+@keyframes tw{50%{opacity:.35}}
+[hidden]{display:none!important}
+button{font:inherit;cursor:pointer}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+
+/* ---------- step 1: departures ---------- */
+.board{position:fixed;inset:0;z-index:700;display:grid;place-items:center;padding:56px 16px 20px;background:linear-gradient(180deg,#141038f0 0%,#2b2470e8 45%,#6a3a9ae0 75%,#d9708ad8 100%);transition:opacity .5s,visibility .5s;overflow-y:auto}
+.board.gone{opacity:0;visibility:hidden}
+.board-in{position:relative;z-index:1;width:min(980px,100%);text-align:center}
+.hills{position:fixed;left:0;right:0;bottom:0;width:100%;height:min(22vh,160px);pointer-events:none}
+.kicker{font-size:14px;color:#c9d8cf;margin:0 0 8px}
+.board h1{font-size:clamp(32px,6vw,58px)}.board h1 i{color:var(--gold)}
+.board .sub{margin:10px auto 26px;max-width:46ch;color:#dfe8e2}
+.stamps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+@media(max-width:760px){.stamps{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.stamp{min-height:130px;padding:12px}.stamp b{font-size:19px}.stamp small{font-size:12.5px}}
+.stamp{position:relative;border:0;background:var(--paper);color:var(--ink);border-radius:14px;padding:16px 14px 14px;text-align:left;box-shadow:0 10px 30px #0008;transform:rotate(var(--r,0deg));transition:transform .25s,box-shadow .25s;min-height:150px;display:flex;flex-direction:column;gap:6px;overflow:hidden}
+.stamp:hover,.stamp:focus-visible{transform:rotate(0) translateY(-4px) scale(1.03);box-shadow:0 16px 40px #000a}
+.stamp::before{content:"";position:absolute;inset:6px;border:2px dashed var(--c);border-radius:10px;pointer-events:none;opacity:.7}
+.stamp svg{width:46px;height:46px;flex:none}
+.stamp b{font-family:"Playfair Display",serif;font-size:22px;line-height:1.1;color:var(--c)}
+.stamp small{font-size:13.5px;color:#4a5a52;line-height:1.35}
+.stamp .cnt{margin-top:auto;font-size:12px;font-weight:700;color:var(--c)}
+.stamp .native{position:absolute;right:12px;top:12px;font-size:20px;color:var(--c);opacity:.35;font-weight:700}
+
+/* ---------- step 2: map UI ---------- */
+.head{position:fixed;z-index:500;top:max(30px,env(safe-area-inset-top));left:14px;right:14px;display:flex;gap:10px;align-items:center;justify-content:space-between;pointer-events:none}
+.pass{pointer-events:auto;display:flex;align-items:center;gap:12px;background:var(--paper);color:var(--ink);border-radius:14px;padding:8px 8px 8px 16px;box-shadow:0 8px 30px #0009;max-width:calc(100vw - 140px)}
+.pass span{font-size:12px;color:#4a5a52;display:block;line-height:1.2}
+.pass b{font-family:"Playfair Display",serif;font-size:20px;color:var(--c,var(--red));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.pass button{min-height:40px;border:0;border-radius:10px;background:var(--pine);color:var(--paper);padding:0 14px;font-weight:700;white-space:nowrap}
+.dice{pointer-events:auto;font-weight:700;min-height:44px;padding:0 18px;border-radius:999px;border:0;background:var(--red);color:#fff;box-shadow:0 6px 20px #c8312a66;white-space:nowrap}
+body.chosen .head{opacity:0;pointer-events:none}.head{transition:opacity .3s}
+body.chosen .head *{pointer-events:none}
+
+.orn{position:relative;width:44px;height:58px;transform-origin:50% 0;animation:sway 4s ease-in-out infinite}
+.orn svg{width:100%;height:100%;overflow:visible}
+.orn b{position:absolute;left:0;right:0;top:25px;text-align:center;font:700 15px "Playfair Display",serif;color:#fff}
+.orn.on{animation:none;transform:scale(1.35)}.orn.on .glow{opacity:1}
+.orn .lbl{position:absolute;left:50%;top:62px;transform:translateX(-50%);white-space:nowrap;background:#1c1838ee;color:var(--paper);font-size:12px;padding:2px 9px;border-radius:999px;border:1px solid #f2c14e66;opacity:0;transition:opacity .2s}
+.orn.on .lbl{opacity:1}
+.glow{opacity:.4;transition:opacity .3s}
+@keyframes sway{50%{transform:rotate(5deg)}}
+@media (prefers-reduced-motion:reduce){.orn,.bulb{animation:none}}
+
+.deck{position:fixed;z-index:500;left:0;right:0;bottom:max(10px,env(safe-area-inset-bottom));display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;padding:10px calc(50vw - 160px) 14px;scrollbar-width:none}
+.deck::-webkit-scrollbar{display:none}
+.card{position:relative;flex:none;width:320px;scroll-snap-align:center;background:var(--paper);color:var(--ink);border-radius:18px;overflow:hidden;box-shadow:0 14px 40px #000a;transition:transform .3s,opacity .3s;opacity:.72;transform:scale(.94)}
+.card.on{opacity:1;transform:none}
+.card.picked{outline:4px solid var(--gold)}
+.pic{position:relative;height:140px;background:#1c3a30}
+.pic svg{display:block;width:100%;height:100%}
+.tag{position:absolute;top:10px;right:10px;background:var(--red);color:#fff;font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px}
+.num{position:absolute;top:8px;left:12px;font:italic 700 15px "Playfair Display",serif;color:var(--paper);text-shadow:0 1px 6px #000}
+.body{position:relative;padding:12px 16px 14px}
+.card h3{font-size:22px}
+.addr{font-size:13px;color:#4a5a52;margin-top:2px}
+.vibe{font-size:14.5px;margin:8px 0 6px;line-height:1.45}
+.meta{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:13px;color:#33443c}
+.meta b{color:var(--red)}
+.acts{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;min-height:94px}
+.acts a,.acts button{min-height:42px;border-radius:999px;border:1.5px solid var(--ink);display:grid;place-items:center;font:500 14px "Be Vietnam Pro",sans-serif;color:var(--ink);text-decoration:none;background:transparent}
+.acts .pick{grid-column:1/-1;background:var(--pine);border-color:var(--pine);color:var(--paper);font-weight:700}
+.card.picked .pick{background:var(--red);border-color:var(--red)}
+/* the run-away button */
+.pick.runner{position:absolute;left:0;right:0;bottom:0;transition:transform .18s ease-out;z-index:2}
+.soldout{position:absolute;inset:0;display:grid;place-items:center;background:#1c1838cc;opacity:0;transition:opacity .3s;pointer-events:none}
+.soldout span{font:800 22px "Playfair Display",serif;color:var(--gold);border:3px solid var(--gold);padding:6px 14px;border-radius:8px;transform:rotate(-8deg);text-align:center;line-height:1.1}
+.card.nope .soldout{opacity:1}
+
+/* secret area card */
+.secret .body label{display:block;font-size:13px;color:#33443c;margin-top:10px}
+.secret input{width:100%;min-height:44px;font:16px "Be Vietnam Pro",sans-serif;border:1.5px solid #1a262055;border-radius:10px;padding:8px 12px;background:#fff;color:var(--ink);margin-top:4px}
+.secret .pin{font-size:13px;margin-top:8px;color:#33443c}
+.secret .pin b{color:var(--red)}
+
+.toast{position:fixed;z-index:600;left:50%;top:max(34px,env(safe-area-inset-top));width:min(460px,calc(100vw - 28px));justify-content:space-between;transform:translate(-50%,-180%);transition:transform .35s;background:var(--gold);color:var(--ink);border-radius:16px;padding:10px 12px 10px 18px;display:flex;gap:12px;align-items:center;box-shadow:0 10px 30px #0009}
+.toast.show{transform:translate(-50%,0)}
+.toast p{margin:0;font-size:15px}.toast b{font-family:"Playfair Display",serif;font-size:17px}
+.toast button{font-weight:700;min-height:40px;padding:0 14px;border-radius:999px;border:0;background:var(--ink);color:var(--paper);white-space:nowrap}
+.quip{position:fixed;z-index:650;left:50%;bottom:340px;transform:translateX(-50%) scale(.9);opacity:0;transition:.25s;background:var(--red);color:#fff;font-weight:700;padding:8px 16px;border-radius:999px;pointer-events:none;white-space:nowrap;box-shadow:0 8px 24px #0008}
+.quip.show{opacity:1;transform:translateX(-50%) scale(1)}
+@media(max-width:600px){.deck{padding-inline:calc(50vw - 145px)}.card{width:290px}.pic{height:118px}.pass b{font-size:17px}.quip{bottom:320px}}
+@media(max-height:680px){.pic{height:92px}.vibe{display:none}}
+</style>
+</head>
+<body>
+<div id="map" role="application" aria-label="Map of the restaurants"></div>
+<div id="dusk" aria-hidden="true"></div>
+<canvas id="snow" aria-hidden="true"></canvas>
+<div class="lights" aria-hidden="true"><svg viewBox="0 0 1200 46" preserveAspectRatio="none" id="lights"></svg></div>
+
+<section class="board" id="board" aria-labelledby="bt">
+  <div class="board-in">
+    <h1 id="bt">Your <i>Lala land</i> Jade Xink Iu!</h1>
+    <p class="sub">Pick your destination</p>
+    <div class="stamps" id="stamps"></div>
+  </div>
+  <svg class="hills" viewBox="0 0 1200 160" preserveAspectRatio="none" aria-hidden="true"><path d="M0 160V96 C140 60 260 70 380 92 S640 40 800 70 S1060 96 1200 64V160Z" fill="#1c1640"/><path d="M0 160V124 C200 100 360 118 520 126 S860 104 1200 120V160Z" fill="#120f2e"/><g transform="translate(930 54)"><rect x="-2" y="0" width="4" height="60" fill="#0c0a24"/><path d="M-10 0h20l-4 -12h-12z" fill="#0c0a24"/><circle cy="-6" r="28" fill="#f6c945" opacity=".25"/><circle cy="-6" r="5" fill="#ffe28a"/></g><g fill="#0c0a24"><circle cx="300" cy="66" r="5"/><path d="M297 70 l-5 26 h4 l3 -14 3 14 h4 l-5 -26z"/><circle cx="318" cy="66" r="5"/><path d="M314 70 q-10 10 -12 26 h22 q-2 -16 -10 -26z" fill="#f6c945"/></g></svg>
+</section>
+
+<div class="head" id="head" hidden>
+  <div class="pass" id="pass"><div><span>Now boarding</span><b id="dest"></b></div><button id="change">Change</button></div>
+  <button class="dice" id="dice">Shuffle</button>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite">
+  <p>Date spot: <b id="pickName"></b></p>
+  <span style="display:flex;gap:6px"><button id="copy">Copy &amp; send</button><button id="undo" aria-label="Change my mind" title="Change my mind" style="background:transparent;color:var(--ink);border:1.5px solid var(--ink);padding:0 12px">✕</button></span>
+</div>
+<div class="quip" id="quip" aria-live="polite"></div>
+<div class="deck" id="deck" aria-label="Restaurants"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+{
+/* ================= postcards (one scene per destination) ================= */
+const G=`<defs><radialGradient id="gl"><stop offset="0" stop-color="#f2c14e" stop-opacity=".75"/><stop offset="1" stop-color="#f2c14e" stop-opacity="0"/></radialGradient></defs>`;
+const sky=(id,a,b)=>`<defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs><rect width="320" height="150" fill="url(#${id})"/>`;
+const stars=`<g fill="#fff" opacity=".7"><circle cx="30" cy="20" r="1"/><circle cx="90" cy="38" r="1.2"/><circle cx="150" cy="14" r="1"/><circle cx="230" cy="30" r="1.1"/><circle cx="290" cy="16" r="1"/></g>`;
+const lantern=(x,y,c="#c8312a",s=1)=>`<g transform="translate(${x} ${y}) scale(${s})"><circle cy="14" r="22" fill="url(#gl)"/><line y1="-10" y2="2" stroke="#2a1a10" stroke-width="1.5"/><ellipse cy="14" rx="11" ry="13" fill="${c}"/><rect x="-5" y="0" width="10" height="3" fill="#1a1a1a"/><rect x="-5" y="25" width="10" height="3" fill="#1a1a1a"/><path d="M0 28v8" stroke="#f2c14e" stroke-width="1.5"/></g>`;
+const steam=(x,y)=>`<g stroke="#f6edd6" stroke-width="2.5" fill="none" opacity=".55" stroke-linecap="round"><path d="M${x-10} ${y} q-6 -10 0 -20 q6 -10 0 -20"/><path d="M${x} ${y-4} q-6 -10 0 -20 q6 -10 0 -20"/><path d="M${x+10} ${y} q-6 -10 0 -20 q6 -10 0 -20"/></g>`;
+const ART={
+ japan:()=>G+sky("aj","#0c1530","#3a2a4a")+stars+`<path d="M190 120 L250 46 L310 120Z" fill="#2c3550"/><path d="M234 66 L250 46 L266 66 L258 62 L250 68 L242 62Z" fill="#f6edd6"/><circle cx="70" cy="40" r="16" fill="#f6edd6" opacity=".9"/><g fill="#c8312a"><rect x="40" y="66" width="120" height="9" rx="3"/><rect x="48" y="80" width="104" height="6"/><rect x="58" y="75" width="9" height="62"/><rect x="133" y="75" width="9" height="62"/></g><rect y="132" width="320" height="18" fill="#1a1a2a"/>`+lantern(20,40)+lantern(178,44,"#c8312a",.9)+lantern(300,30,"#c8312a",.8),
+ korea:()=>G+`<rect width="320" height="150" fill="#2a1a16"/><rect y="98" width="320" height="52" fill="#4a2a1e"/><ellipse cx="160" cy="104" rx="86" ry="24" fill="#1a1a1a"/><ellipse cx="160" cy="100" rx="74" ry="18" fill="#3a3a3a"/><g stroke="#6a6a6a" stroke-width="2">${[110,130,150,170,190,210].map(x=>`<path d="M${x} 86v28"/>`).join("")}</g><g fill="#c8564a"><rect x="118" y="92" width="26" height="9" rx="4"/><rect x="152" y="96" width="26" height="9" rx="4"/><rect x="184" y="90" width="22" height="9" rx="4"/></g>`+steam(160,82)+`<g transform="translate(36 54)"><rect width="18" height="46" rx="4" fill="#3f8a5a"/><rect x="5" y="-12" width="8" height="14" fill="#3f8a5a"/><rect x="2" y="16" width="14" height="12" fill="#f6edd6"/></g><g transform="translate(266 66)"><rect x="-3" y="0" width="22" height="30" rx="4" fill="#f6edd6"/><path d="M2 10h12" stroke="#c8312a" stroke-width="3"/></g><circle cx="160" cy="40" r="60" fill="url(#gl)"/>`,
+ china:()=>G+sky("ac","#3a0e10","#7a1a1a")+`<rect y="104" width="320" height="46" fill="#2a1010"/>${[40,100,160,220,280].map((x,i)=>lantern(x,i%2?26:16,"#e2402e",1.1)).join("")}<g transform="translate(160 106)"><ellipse rx="54" ry="12" fill="#b07a3a"/><rect x="-54" y="-24" width="108" height="24" fill="#c9903f"/><ellipse cy="-24" rx="54" ry="12" fill="#d9a65a"/><g fill="#fbf4e4"><circle cx="-24" cy="-28" r="10"/><circle cx="0" cy="-30" r="10"/><circle cx="24" cy="-28" r="10"/></g></g>`+steam(160,64),
+ west:()=>G+`<rect width="320" height="150" fill="#2a1a12"/><rect y="96" width="320" height="54" fill="#5a2a1e"/><g fill="#f6edd6" opacity=".12">${Array.from({length:8},(_,i)=>`<rect x="${i*40}" y="96" width="20" height="54"/>`).join("")}</g>${[90,230].map(x=>`<path d="M${x} 0v24" stroke="#111" stroke-width="1.5"/><path d="M${x-14} 36 q14 -20 28 0z" fill="#c8963e"/><circle cx="${x}" cy="42" r="36" fill="url(#gl)"/>`).join("")}<g transform="translate(110 100)"><circle r="34" fill="#e8c27a"/><circle r="29" fill="#c8402a"/><g fill="#fbf4e4"><circle cx="-10" cy="-8" r="6"/><circle cx="12" cy="4" r="6"/><circle cx="-4" cy="14" r="5"/></g><g fill="#3f8a5a"><circle cx="6" cy="-14" r="3"/><circle cx="-16" cy="8" r="3"/></g></g><g transform="translate(222 102)"><ellipse rx="34" ry="10" fill="#f6edd6"/><ellipse rx="20" ry="7" fill="#6a2a18"/><path d="M-12 -2 l24 4" stroke="#3a1408" stroke-width="2"/></g><g fill="none" stroke="#f6edd6" stroke-width="1.5"><path d="M160 70 q6 10 0 16 M160 86 v12 M156 98h8"/></g><path d="M155 76 q5 6 10 0z" fill="#8a1a2a"/>`,
+ chaos:()=>G+sky("ax","#14202a","#2a3a3a")+stars+`<rect y="108" width="320" height="42" fill="#3a3a32"/><path d="M0 108h320" stroke="#f2c14e" stroke-width="2" stroke-dasharray="14 10" opacity=".5"/><g stroke="#ffd98a" stroke-width="2"><path d="M30 0v60M290 0v52"/></g><circle cx="30" cy="62" r="5" fill="#ffd98a"/><circle cx="30" cy="62" r="34" fill="url(#gl)"/><circle cx="290" cy="54" r="5" fill="#ffd98a"/><circle cx="290" cy="54" r="34" fill="url(#gl)"/><rect x="100" y="90" width="120" height="8" rx="2" fill="#2f7ab6"/><g fill="#2f7ab6"><rect x="104" y="98" width="6" height="22"/><rect x="210" y="98" width="6" height="22"/></g><g fill="#c8312a"><rect x="70" y="106" width="24" height="5" rx="2"/><rect x="74" y="111" width="4" height="14"/><rect x="86" y="111" width="4" height="14"/><rect x="226" y="106" width="24" height="5" rx="2"/><rect x="230" y="111" width="4" height="14"/><rect x="242" y="111" width="4" height="14"/></g><g transform="translate(160 84)"><ellipse rx="30" ry="8" fill="#9aa0a6"/><rect x="-30" y="-16" width="60" height="16" fill="#b8bec4"/><ellipse cy="-16" rx="30" ry="8" fill="#c8564a"/></g>`+steam(160,64),
+ comsuon:()=>G+`<rect width="320" height="150" fill="#f2e6c8"/><g transform="translate(160 84)"><ellipse rx="96" ry="40" fill="#fbf4e4" stroke="#d8c8a0" stroke-width="3"/><ellipse cx="-30" cy="6" rx="36" ry="20" fill="#fff"/><path d="M-4 -26 q70 -12 84 18 q-8 34 -78 24 q-30 -18 -6 -42z" fill="#8a3a18"/><path d="M10 -18 q50 -4 60 14" stroke="#c8662a" stroke-width="4" fill="none"/><ellipse cx="-48" cy="-14" rx="16" ry="8" fill="#f2c14e"/><circle cx="-48" cy="-14" r="5" fill="#f08a2a"/><g fill="#3f8a5a"><ellipse cx="-70" cy="16" rx="10" ry="5"/><ellipse cx="-56" cy="22" rx="9" ry="4"/></g></g><text x="300" y="34" text-anchor="end" font-family="Playfair Display,serif" font-weight="800" font-size="34" fill="#c8312a">?!</text>`,
+ secret:()=>G+sky("as","#1c1640","#3a2a7a")+`<g stroke="#5a4aa8" stroke-width="1" opacity=".6">${Array.from({length:9},(_,i)=>`<path d="M${i*40} 0v150"/>`).join("")}${Array.from({length:5},(_,i)=>`<path d="M0 ${i*36}h320"/>`).join("")}</g><path d="M30 120 C90 40 170 140 220 60 S300 40 300 30" stroke="#f2c14e" stroke-width="3" stroke-dasharray="8 8" fill="none"/><g transform="translate(300 30)"><circle r="30" fill="url(#gl)"/><path d="M0 0 c-12 -14 -12 -30 0 -30 c12 0 12 16 0 30z" transform="translate(0 4)" fill="#c8312a"/><circle cy="-14" r="4" fill="#fbf4e4"/></g><text x="150" y="96" text-anchor="middle" font-family="Playfair Display,serif" font-style="italic" font-weight="700" font-size="58" fill="#f2c14e" opacity=".9">?</text>`
+};
+
+/* ================= destinations & spots ================= */
+const D=[
+ {id:"japan",name:"Japan",native:"日本",c:"#c8312a",blurb:"Izakaya counters, ramen, crab pasta, skewers.",icon:`<circle cx="23" cy="23" r="21" fill="#fbf4e4" stroke="#c8312a" stroke-width="2"/><circle cx="23" cy="23" r="9" fill="#c8312a"/>`},
+ {id:"korea",name:"Korea",native:"한국",c:"#2a5fa8",blurb:"Table-side BBQ, fried chicken, spicy noodles.",icon:`<circle cx="23" cy="23" r="21" fill="#fbf4e4" stroke="#2a5fa8" stroke-width="2"/><path d="M14 23a9 9 0 0 1 18 0z" fill="#c8312a"/><path d="M14 23a9 9 0 0 0 18 0z" fill="#2a5fa8"/>`},
+ {id:"china",name:"China & Taiwan",native:"中華",c:"#b02a1e",blurb:"Moody red-lit small plates and Taiwanese bao.",icon:`<rect x="2" y="2" width="42" height="42" rx="8" fill="#b02a1e"/><path d="M23 9l3 8h8l-6 5 2 8-7-5-7 5 2-8-6-5h8z" fill="#f2c14e"/>`},
+ {id:"west",name:"Europe & America",native:"",c:"#2b2470",blurb:"Candlelit steak, wood-fired pizza.",icon:`<rect x="2" y="2" width="42" height="42" rx="8" fill="#2b2470"/><path d="M15 32 l8 -18 8 18z" fill="#f2c14e"/><circle cx="23" cy="28" r="3" fill="#c8312a"/>`},
+ {id:"chaos",name:"50K Lộn Xộn",native:"",c:"#a8621e",blurb:"Street-food Saigon & friends. Plastic stools, zero regrets.",icon:`<rect x="2" y="2" width="42" height="42" rx="8" fill="#a8621e"/><text x="23" y="30" text-anchor="middle" font-family="Playfair Display,serif" font-weight="800" font-size="16" fill="#fbf4e4">50K</text>`},
+ {id:"secret",name:"Secret Area",native:"?",c:"#6a3a8a",blurb:"Your secret place",icon:`<rect x="2" y="2" width="42" height="42" rx="8" fill="#6a3a8a"/><text x="23" y="33" text-anchor="middle" font-family="Playfair Display,serif" font-weight="800" font-size="26" fill="#f2c14e">?</text>`}
+];
+const S=[
+ /* Japan */
+ {d:"japan",n:"Aoyama · Sumibi & Itameshi",a:"1H Mê Linh, Bình Thạnh",h:"Dinner 17:30 – 22:30",tag:"Book ahead",ll:[10.7886113,106.709443],pid:"ChIJp1mEVWIpdTER9-W7lFobBUU",
+  v:"Không gian izakaya nhỏ ấm, có đầu bếp người Nhật. Món Nhật–Ý nướng than hoa, ngồi quầy cửa sổ nhìn thẳng vào bếp.",m:"mì cua, omurice, carbonara"},
+ {d:"japan",n:"Kyoichi Ramen Izakaya",a:"34 Phạm Viết Chánh, Bình Thạnh",h:"17:00 – 23:00 (Fri–Sat till 0:00)",tag:"Teppanyaki counter",ll:[10.7901138,106.7102171],pid:"ChIJz_nNlbIodTERotmdhkAFHVU",
+  v:"Nhỏ, yên, tối giản kiểu Nhật, nép trong hẻm. Tầng dưới ngồi xem đầu bếp làm teppanyaki ngay trước mặt.",m:"ramen ớt đỏ (cấp 1 thôi!)"},
+ {d:"japan",n:"MANTEN · Kushiyaki & Sushiya",a:"998/3 Quang Trung, Gò Vấp",h:"11:00 – 22:00",tag:"Hidden gem",ll:[10.8398861,106.6471026],pid:"ChIJw7y9WgApdTERvOdCo-DK3i4",
+  v:"Quán xiên nướng & sushi nhỏ xinh trong một khu sáng tạo. Ban ngày còn có cà phê và lớp làm gốm.",m:"xiên nướng kushiyaki, ramen tonkotsu"},
+ {d:"japan",n:"AGECHAN",a:"814 Nguyễn Kiệm, Gò Vấp",h:"Dinner 17:00 – 22:00",tag:"Comfort katsu",ll:[10.8161818,106.678845],pid:"ChIJj5HeM8ApdTERSJh9e02T1vg",
+  v:"Katsu và cà ri phần to, tặng kèm salad và súp miso. Dễ ăn, dễ chịu.",m:"set katsu, cà ri Nhật"},
+ /* Korea */
+ {d:"korea",n:"Sarangheo Korean BBQ",a:"18C Phan Văn Trị, Gò Vấp",h:"11:00 – 23:00",tag:"Owner grills for you",ll:[10.8348772,106.6670569],pid:"ChIJ44v9GjApdTERDyOMsYOLcio",
+  v:"Thịt dày, tươi, banchan được thêm thoải mái. Ông chủ người Hàn hay tự nướng tại bàn. Nhớ ghi tên vào giấy chờ trước cửa.",m:"set bò & heo, trứng hấp"},
+ {d:"korea",n:"Kokoria",a:"699 Phan Văn Trị, Gò Vấp",h:"10:30 – 21:20",tag:"Fried chicken",ll:[10.8274495,106.6872482],pid:"ChIJzf7CawApdTERsx67MFPnONY",
+  v:"Sáng sủa, hiện đại, mở K-pop suốt. Gà rán giòn rụm chấm phô mai và mù tạt mật ong.",m:"gà không xương, gà phô mai chảo nóng"},
+ {d:"korea",n:"Mì Cay Seoul",a:"4 Lê Đức Thọ, Gò Vấp",h:"8:00 – 22:00",tag:"Spice challenge",ll:[10.8306739,106.6823073],pid:"ChIJ-0nEO3gpdTERXmghDikpWQs",
+  v:"Mì cay Hàn với 7 cấp độ. Máy lạnh mát, thoải mái, hợp để thách nhau ăn cay.",m:"mì cay hải sản, cấp 2"},
+ /* China & Taiwan */
+ {d:"china",n:"Fortune Ivy",a:"19R4 Nguyễn Hữu Cảnh, Bình Thạnh",h:"18:00 – 23:00 (Fri–Sat 17:00 – 0:00)",tag:"Red-lit & moody",ll:[10.7899281,106.7110464],pid:"ChIJiUfColopdTERpI4w8FrXNcU",
+  v:"Món Hoa hiện đại kiểu đĩa nhỏ chia nhau, phòng ánh đèn đỏ ấm, đủ yên để nói chuyện. Quán giữ bàn rất đúng giờ, đến sớm một chút nha.",m:"mì biang biang, há cảo, sườn Thượng Hải"},
+ {d:"china",n:"Gua Bao",a:"294/60 Xô Viết Nghệ Tĩnh, Bình Thạnh",h:"Dinner 17:00 – 22:30",tag:"Taiwan",ll:[10.7998923,106.7133989],pid:"ChIJNUf7UAApdTERfMXTej8CAjI",
+  v:"Món Đài Loan ấm bụng trong căn phòng decor xinh, chén dĩa đẹp, nhạc nhẹ.",m:"mì bò, gua bao, đậu hũ"},
+ /* Europe & America */
+ {d:"west",n:"Le Steak",a:"Hẻm 26 D5, Bình Thạnh",h:"Dinner 17:00 – 21:30",tag:"Candlelit steak",ll:[10.8058252,106.713478],pid:"ChIJmzr4a6ModTERUdYATWJihmE",
+  v:"Quán steak nhỏ trong xóm, tối lên đèn là lãng mạn bất ngờ. Hơi khó tìm, đi sớm chút cho kịp.",m:"combo steak cho 2 người"},
+ {d:"west",n:"Pizza 4P's Saigon Pearl",a:"Ruby 1, 92 Nguyễn Hữu Cảnh, Bình Thạnh",h:"11:00 – 23:00",tag:"Wood-fired",ll:[10.7895907,106.7207971],pid:"ChIJ-U0708spdTERAGT7uAW90zk",
+  v:"Chi nhánh 4P's ăn tại chỗ gần nhất. Ngồi quầy nhìn lò củi nướng pizza. Nhớ đặt bàn vì hay kín chỗ.",m:"pizza burrata, mì cua sốt kem cà chua"},
+ /* 50K chaos */
+ {d:"chaos",n:"Lẩu Bò Nhà Gỗ",a:"426 Phan Văn Trị, Gò Vấp",h:"10:00 – 23:00",tag:"Low stools",ll:[10.8278946,106.6870477],pid:"ChIJozts1SIpdTERBKW9D2_DsdA",
+  v:"Lẩu bò kiểu Đà Lạt, ngồi bàn gỗ thấp. Rẻ, nghi ngút khói, ồn ào theo kiểu dễ thương.",m:"lẩu bò, cuốn bánh tráng"},
+ {d:"chaos",n:"Chow Long · Lẩu Bò Triều Châu",a:"294 Nguyễn Thái Sơn, Gò Vấp",h:"16:30 – 0:30",tag:"Late night",ll:[10.8219798,106.6850432],pid:"ChIJu0adTxMpdTERgpBNheulrqk",
+  v:"Lẩu bò Triều Châu cho những đêm chưa muốn về.",m:"lẩu bò Triều Châu"},
+ {d:"chaos",n:"Bò Lội Mắm Quán",a:"710/2 Phan Văn Trị, Gò Vấp",h:"17:00 – 23:00",tag:"DIY dipping",ll:[10.8353506,106.6659836],pid:"ChIJZfPvEwApdTERGSpyOk19b5Q",
+  v:"Tự nhúng bò trong nước mắm ruốc hoặc giấm. Bảo đảm cười nhau vì tay cuốn vụng.",m:"bò nhúng giấm, bò nhúng mắm ruốc"},
+ {d:"chaos",n:"Hà Thành Quán 1989",a:"446 Phan Văn Trị, Gò Vấp",h:"9:00 – 22:00",tag:"Bún đậu",ll:[10.828293,106.6858419],pid:"ChIJl2AjAwApdTERj9GLk2CkEeY",
+  v:"Bún đậu mắm tôm kiểu Hà Nội, đậu chiên ngon xuất sắc, cuối bữa còn có đồ ngọt. Cảnh báo: mắm tôm là bài kiểm tra độ hợp nhau.",m:"mẹt bún đậu đầy đủ, bún chả"},
+ {d:"chaos",n:"Little Chiang Mai Signature",a:"34/8-9 Trần Khánh Dư, Tân Định",h:"11:00 – 22:00",tag:"Thai",ll:[10.7945075,106.6883678],pid:"ChIJibsbYpYpdTERYLNV7sgQln0",
+  v:"Bếp Thái nhiều tầng trong hẻm cạnh bờ kè. Combo chia sẻ hời, tráng miệng có bingsu.",m:"tom yum, bạch tuộc nướng, trà sữa Thái"},
+ {d:"chaos",n:"Cơm Tấm Tài",a:"100 Nguyễn Văn Nghi, Gò Vấp",h:"6:30 – 1:00",tag:"Legend",troll:1,ll:[10.8231382,106.6881091],pid:"ChIJ-wzyp_oodTERMYW7Bnns8uI",
+  v:"Huyền thoại Sài Gòn: sườn chồng hai miếng, mở tới 1 giờ sáng. Lựa chọn tuyệt vời cho mọi đêm… trừ buổi hẹn đầu tiên.",m:"cơm sườn bì chả… thôi đừng"}
+];
+
+/* ================= map ================= */
+const map=L.map("map",{zoomControl:true}).setView([10.815,106.695],13);
+L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",{maxZoom:19,subdomains:"abcd",
+  attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'}).addTo(map);
+const ornSVG=c=>`<svg viewBox="0 0 44 58"><circle class="glow" cx="22" cy="34" r="30" fill="#f2c14e" opacity=".35"/><line x1="22" y1="0" x2="22" y2="9" stroke="#f6edd6" stroke-width="1.5"/><path d="M18 9h8l1 6h-10z" fill="#e8d08a" stroke="#a88a3a"/><circle cx="22" cy="34" r="19" fill="${c}" stroke="#00000040" stroke-width="1.5"/><path d="M5 30 q17 8 34 0" stroke="#f6edd6" stroke-width="2.5" fill="none" opacity=".75"/><path d="M5 38 q17 8 34 0" stroke="#f6edd6" stroke-width="1.2" fill="none" opacity=".5" stroke-dasharray="2 3"/><ellipse cx="15" cy="25" rx="4" ry="6" fill="#fff" opacity=".45"/></svg>`;
+const dest=id=>D.find(x=>x.id===id);
+
+/* ================= state ================= */
+let cur=-1,pick=null,lock=false,active=[],markers=[],dId=null,pin=null;
+const deck=document.getElementById("deck"),board=document.getElementById("board"),head=document.getElementById("head");
+const deckH=()=>deck.getBoundingClientRect().height||300;
+const gmaps=(n,pid)=>`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(n)}&query_place_id=${pid}`;
+const gdir=(n,pid)=>`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(n)}&destination_place_id=${pid}`;
+
+/* stamp board */
+document.getElementById("stamps").innerHTML=D.map((x,i)=>{
+  const n=S.filter(s=>s.d===x.id).length;
+  return `<button class="stamp" data-d="${x.id}" style="--c:${x.c};--r:${[-2,1.5,-1,2,-1.5,1][i]}deg"><svg viewBox="0 0 46 46" aria-hidden="true">${x.icon}</svg><span class="native" aria-hidden="true">${x.native}</span><b>${x.name}</b><small>${x.blurb}</small><span class="cnt">${n?n+" spots":"Your call"}</span></button>`}).join("");
+document.getElementById("stamps").addEventListener("click",e=>{const b=e.target.closest(".stamp");if(b)fly2(b.dataset.d)});
+document.getElementById("change").addEventListener("click",()=>{clearPick();board.classList.remove("gone");head.hidden=true;deck.innerHTML="";markers.forEach(m=>m.remove());markers=[];if(pin){pin.remove();pin=null}});
+
+function fly2(id){
+  dId=id;const d=dest(id);
+  board.classList.add("gone");head.hidden=false;
+  const p=document.getElementById("pass");p.style.setProperty("--c",d.c);document.getElementById("dest").textContent=d.name;
+  document.getElementById("dice").hidden=id==="secret";
+  markers.forEach(m=>m.remove());markers=[];cur=-1;
+  if(id==="secret"){active=[];renderSecret();map.flyTo([10.815,106.695],13,{duration:1});return}
+  active=S.filter(s=>s.d===id);
+  markers=active.map((x,i)=>{
+    const icon=L.divIcon({className:"",iconSize:[44,58],iconAnchor:[22,0],html:`<div class="orn" id="m${i}">${ornSVG(d.c)}<b>${i+1}</b><span class="lbl">${x.n}</span></div>`});
+    const mk=L.marker(x.ll,{icon,title:x.n,keyboard:true}).addTo(map);mk.on("click",()=>go(i,true));return mk;
+  });
+  renderCards(d);
+  map.flyToBounds(L.latLngBounds(active.map(x=>x.ll)),{paddingTopLeft:[40,110],paddingBottomRight:[40,deckH()+30],maxZoom:15,duration:1.2});
+  setTimeout(()=>go(0,false),1300);
+}
+
+function renderCards(d){
+  deck.innerHTML=active.map((x,i)=>`<article class="card${x.troll?" troll":""}" id="c${i}" data-i="${i}">
+  <div class="pic"><svg viewBox="0 0 320 150" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${(x.troll?ART.comsuon:ART[d.id])()}</svg><span class="num">No. ${i+1}</span><span class="tag" style="background:${d.c}">${x.tag}</span></div>
+  <div class="body"><h3>${x.n}</h3><div class="addr">${x.a}</div>
+  <p class="vibe">${x.v}</p>
+  <div class="meta"><span><b>Open</b> ${x.h}</span><span><b>Try</b> ${x.m}</span></div>
+  <div class="acts">
+    <a href="${gmaps(x.n,x.pid)}" target="_blank" rel="noopener">Photos &amp; reviews</a>
+    <a href="${gdir(x.n,x.pid)}" target="_blank" rel="noopener">Directions</a>
+    <button class="pick${x.troll?" runner":""}" data-i="${i}">Này nhen</button>
+  </div>${x.troll?'<div class="soldout"><span>Sold out<br>for date #1</span></div>':""}</div></article>`).join("");
+  observe();
+}
+
+function renderSecret(){
+  const d=dest("secret");
+  deck.innerHTML=`<article class="card on secret" id="c0" data-i="0">
+  <div class="pic"><svg viewBox="0 0 320 150" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${ART.secret()}</svg><span class="tag" style="background:${d.c}">Your call</span></div>
+  <div class="body"><h3>Secret area unlocked</h3><div class="addr">Chị đẹp có recommend gì khum?</div>
+  <label for="sName">Restaurant name</label><input id="sName" autocomplete="off">
+  <label for="sArea">Area or address</label><input id="sArea" autocomplete="off">
+  <div class="acts" style="min-height:0"><button class="pick" id="sGo">Này nhen</button></div></div></article>`;
+  document.getElementById("sGo").addEventListener("click",()=>{
+    const n=document.getElementById("sName").value.trim(),a=document.getElementById("sArea").value.trim();
+    if(!n&&!pin){quip("Give me a name or a pin first");document.getElementById("sName").focus();return}
+    pick={n:n||"a secret pin",a,pin:pin?pin.getLatLng():null};
+    showPick(pick.n);
+    notify("Secret Area unlocked 🗝️",`${pick.n}${pick.a?" ("+pick.a+")":""}${pick.pin?"\nhttps://maps.google.com/?q="+pick.pin.lat.toFixed(5)+","+pick.pin.lng.toFixed(5):""}`,["key","heart"]);
+  });
+}
+map.on("click",e=>{
+  if(dId!=="secret")return;
+  if(pin)pin.remove();
+  pin=L.marker(e.latlng,{icon:L.divIcon({className:"",iconSize:[44,58],iconAnchor:[22,0],html:`<div class="orn on">${ornSVG(dest("secret").c)}<b>?</b></div>`})}).addTo(map);
+  const p=document.getElementById("sPin");if(p)p.innerHTML="<b>Pin dropped.</b> Tap elsewhere to move it.";
+});
+
+/* card ↔ map sync */
+let io;
+function observe(){
+  if(io)io.disconnect();
+  io=new IntersectionObserver(es=>{if(lock)return;es.forEach(e=>{if(e.isIntersecting&&e.intersectionRatio>.7)go(+e.target.dataset.i)})},{root:deck,threshold:[.7]});
+  deck.querySelectorAll(".card").forEach(c=>io.observe(c));
+}
+function fly(i){const z=16,pt=map.project(active[i].ll,z).add([0,deckH()/2-30]);map.flyTo(map.unproject(pt,z),z,{duration:.9})}
+function go(i,fromMap){
+  if(!active.length||i<0||i>=active.length)return;
+  if(i===cur&&!fromMap)return;
+  cur=i;
+  document.querySelectorAll(".orn").forEach(el=>el.classList.toggle("on",el.id==="m"+i));
+  deck.querySelectorAll(".card").forEach((el,k)=>el.classList.toggle("on",k===i));
+  markers.forEach((m,k)=>m.setZIndexOffset(k===i?1000:0));
+  fly(i);
+  if(fromMap){lock=true;document.getElementById("c"+i).scrollIntoView({behavior:"smooth",inline:"center",block:"nearest"});setTimeout(()=>lock=false,700)}
+}
+
+/* ================= ping Thanh's phone (ntfy.sh) ================= */
+const NTFY_TOPIC="jade-lalaland-b8627026";
+function notify(title,message,tags){try{fetch("https://ntfy.sh/",{method:"POST",body:JSON.stringify({topic:NTFY_TOPIC,title,message,tags:tags||["heart"],priority:4})}).catch(()=>{})}catch(e){}}
+let trollPinged=false;
+
+/* ================= picking ================= */
+const toast=document.getElementById("toast"),pn=document.getElementById("pickName"),cp=document.getElementById("copy");
+function showPick(name){pn.textContent=name;toast.classList.add("show");document.body.classList.add("chosen")}
+function clearPick(){pick=null;toast.classList.remove("show");document.body.classList.remove("chosen");deck.querySelectorAll(".card").forEach(el=>{el.classList.remove("picked");const b=el.querySelector(".pick:not(.runner)");if(b&&!el.classList.contains("secret"))b.textContent="Này nhen"})}
+deck.addEventListener("click",e=>{
+  const b=e.target.closest(".pick");if(!b||b.classList.contains("runner")||b.id==="sGo")return;
+  const i=+b.dataset.i,x=active[i];
+  if(pick&&pick.n===x.n){clearPick();return}
+  clearPick();pick=x;
+  const c=document.getElementById("c"+i);c.classList.add("picked");b.textContent="See you there ✓";
+  showPick(x.n);
+  notify("Jade chọn rồi! ✈️",`${dest(dId).name}: ${x.n} (${x.a})\nOpen: ${x.h}`,["airplane","heart"]);
+});
+document.getElementById("undo").addEventListener("click",clearPick);
+cp.addEventListener("click",async()=>{
+  if(!pick)return;
+  const d=dest(dId);
+  let msg=pick.pin!==undefined
+    ?`Destination: Secret Area 🗝️ — ${pick.n}${pick.a?` (${pick.a})`:""}${pick.pin?` 📍 https://maps.google.com/?q=${pick.pin.lat.toFixed(5)},${pick.pin.lng.toFixed(5)}`:""}`
+    :`Destination: ${d.name} ✈️ — ${pick.n} (${pick.a}) 🎄`;
+  try{await navigator.clipboard.writeText(msg);cp.textContent="Copied!"}catch(e){cp.textContent="Screenshot it 😉"}
+  setTimeout(()=>cp.textContent="Copy & send",2500);
+});
+
+/* ================= the cơm sườn that runs away ================= */
+const LINES=["Nope.","Not on a first date 🙈","Nice try","Too fast for you","Still no","Date #5, maybe?"];
+let tries=0;
+const qp=document.getElementById("quip");let qt;
+function quip(t){qp.textContent=t;qp.classList.add("show");clearTimeout(qt);qt=setTimeout(()=>qp.classList.remove("show"),1400)}
+function dodge(b){
+  const card=b.closest(".card");if(card.classList.contains("nope"))return;
+  const box=b.parentElement.getBoundingClientRect(),w=b.offsetWidth;
+  const maxX=Math.max(40,box.width-w*.35),dx=(Math.random()<.5?-1:1)*(40+Math.random()*maxX*.6),dy=-(20+Math.random()*120);
+  b.style.transform=`translate(${Math.max(-box.width*.55,Math.min(box.width*.55,dx))}px,${dy}px) rotate(${(Math.random()*16-8).toFixed(1)}deg)`;
+  b.textContent=LINES[tries%LINES.length];quip(LINES[tries%LINES.length]);tries++;
+  if(!trollPinged){trollPinged=true;notify("Báo động cơm sườn 🚨","Jade vừa định chọn Cơm Tấm Tài 😂",["rotating_light"])}
+  if(tries>=5){card.classList.add("nope");b.textContent="Sold out";b.style.transform="";b.disabled=true;quip("Okay okay, pick something else 😌")}
+}
+deck.addEventListener("pointerover",e=>{const b=e.target.closest(".runner");if(b&&e.pointerType==="mouse")dodge(b)});
+deck.addEventListener("pointerdown",e=>{const b=e.target.closest(".runner");if(b){e.preventDefault();dodge(b)}});
+deck.addEventListener("keydown",e=>{const b=e.target.closest(".runner");if(b&&(e.key==="Enter"||e.key===" ")){e.preventDefault();dodge(b)}});
+
+/* ================= extras ================= */
+document.getElementById("dice").addEventListener("click",()=>{
+  if(active.length<2)return;let i;do{i=Math.floor(Math.random()*active.length)}while(i===cur);go(i,true);
+});
+document.addEventListener("keydown",e=>{
+  if(board.classList.contains("gone")&&!/INPUT/.test(document.activeElement.tagName)){
+    if(e.key==="ArrowRight")go(Math.min(active.length-1,cur+1),true);
+    if(e.key==="ArrowLeft")go(Math.max(0,cur-1),true);
+  }
+});
+const ls=document.getElementById("lights");let lh='<path d="M0 8 Q150 40 300 12 T600 12 T900 12 T1200 10" stroke="#0c0a24" stroke-width="2" fill="none"/>';
+for(let k=0;k<24;k++){const x=25+k*48.7,y=14+Math.abs(Math.sin(x/95))*16,c=["#c8312a","#f2c14e","#3fa36b","#f6edd6"][k%4];lh+=`<g class="bulb"><circle cx="${x}" cy="${y+7}" r="10" fill="#ffd98a" opacity=".25"/><circle cx="${x}" cy="${y+7}" r="4.5" fill="${k%5?"#ffe6a0":"#f4a6c8"}"/></g>`}
+ls.innerHTML=lh;
+const cv=document.getElementById("snow"),cx=cv.getContext("2d"),still=matchMedia("(prefers-reduced-motion: reduce)").matches;
+let W,H,fl=[];
+function size(){W=cv.width=innerWidth;H=cv.height=innerHeight;fl=Array.from({length:Math.round(W*H/9000)},()=>({x:Math.random()*W,y:Math.random()*H,r:Math.random()*2.2+.6,s:Math.random()*.6+.3,d:Math.random()*6.3}))}
+let shot=null,t=0;
+function snow(){cx.clearRect(0,0,W,H);t++;for(const f of fl){const a=.35+.65*Math.abs(Math.sin(f.d+t*.02*f.s));cx.fillStyle=`rgba(255,${f.r>2?226:255},${f.r>2?160:255},${still?.8:a})`;cx.beginPath();cx.arc(f.x,f.y,f.r*.8,0,7);cx.fill();if(!still){f.y+=f.s*.15;if(f.y>H){f.y=-4;f.x=Math.random()*W}}}
+ if(!still){if(!shot&&Math.random()<.004)shot={x:Math.random()*W*.7,y:Math.random()*H*.35,l:0};if(shot){shot.l+=12;const g=cx.createLinearGradient(shot.x,shot.y,shot.x+shot.l,shot.y+shot.l*.4);g.addColorStop(0,"rgba(255,255,255,0)");g.addColorStop(1,"rgba(255,240,200,.9)");cx.strokeStyle=g;cx.lineWidth=2;cx.beginPath();cx.moveTo(shot.x,shot.y);cx.lineTo(shot.x+shot.l,shot.y+shot.l*.4);cx.stroke();if(shot.l>260)shot=null}requestAnimationFrame(snow)}}
+addEventListener("resize",size);size();snow();
+}
+</script>
+</body>
+</html>
