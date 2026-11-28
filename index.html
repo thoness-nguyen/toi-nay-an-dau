@@ -113,6 +113,15 @@ body.chosen .head *{pointer-events:none}
 .quip.show{opacity:1;transform:translateX(-50%) scale(1)}
 @media(max-width:600px){.deck{padding-inline:calc(50vw - 145px)}.card{width:290px}.pic{height:118px}.pass b{font-size:17px}.quip{bottom:320px}}
 @media(max-height:680px){.pic{height:92px}.vibe{display:none}}
+
+/* music: City of Stars (YouTube embed), 0:07–0:37 on loop */
+.music{position:fixed;z-index:750;right:14px;top:max(92px,calc(env(safe-area-inset-top) + 62px));display:flex;align-items:center;gap:10px;background:#1c1838e6;border:1px solid #f6c94566;border-radius:14px;padding:6px 10px 6px 6px;box-shadow:0 8px 24px #0008;backdrop-filter:blur(6px)}
+.music .yt{width:112px;height:63px;border-radius:8px;overflow:hidden;background:#000;flex:none}
+.music .yt iframe{width:100%;height:100%;display:block;border:0}
+.music button{border:0;background:var(--gold);color:var(--ink);width:40px;height:40px;border-radius:50%;font-size:16px;font-weight:700;flex:none}
+.music small{display:block;font-size:11px;color:#c9c2e8;line-height:1.2}
+.music b{display:block;font:italic 700 14px "Playfair Display",serif;color:var(--paper);white-space:nowrap}
+@media(max-width:600px){.music .yt{width:88px;height:50px}.music b{font-size:13px}}
 </style>
 </head>
 <body>
@@ -140,6 +149,11 @@ body.chosen .head *{pointer-events:none}
   <span style="display:flex;gap:6px"><button id="copy">Copy &amp; send</button><button id="undo" aria-label="Change my mind" title="Change my mind" style="background:transparent;color:var(--ink);border:1.5px solid var(--ink);padding:0 12px">✕</button></span>
 </div>
 <div class="quip" id="quip" aria-live="polite"></div>
+<div class="music" id="music" aria-label="Background music">
+  <div class="yt"><div id="ytp"></div></div>
+  <div><small>Now playing</small><b>City of Stars</b></div>
+  <button id="mbtn" aria-label="Play music">▶</button>
+</div>
 <div class="deck" id="deck" aria-label="Restaurants"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -382,6 +396,24 @@ let shot=null,t=0;
 function snow(){cx.clearRect(0,0,W,H);t++;for(const f of fl){const a=.35+.65*Math.abs(Math.sin(f.d+t*.02*f.s));cx.fillStyle=`rgba(255,${f.r>2?226:255},${f.r>2?160:255},${still?.8:a})`;cx.beginPath();cx.arc(f.x,f.y,f.r*.8,0,7);cx.fill();if(!still){f.y+=f.s*.15;if(f.y>H){f.y=-4;f.x=Math.random()*W}}}
  if(!still){if(!shot&&Math.random()<.004)shot={x:Math.random()*W*.7,y:Math.random()*H*.35,l:0};if(shot){shot.l+=12;const g=cx.createLinearGradient(shot.x,shot.y,shot.x+shot.l,shot.y+shot.l*.4);g.addColorStop(0,"rgba(255,255,255,0)");g.addColorStop(1,"rgba(255,240,200,.9)");cx.strokeStyle=g;cx.lineWidth=2;cx.beginPath();cx.moveTo(shot.x,shot.y);cx.lineTo(shot.x+shot.l,shot.y+shot.l*.4);cx.stroke();if(shot.l>260)shot=null}requestAnimationFrame(snow)}}
 addEventListener("resize",size);size();snow();
+}
+
+/* ================= music ================= */
+{
+  const START=7,END=37,btn=document.getElementById("mbtn");let yp=null,ready=false,wanted=false;
+  const setBtn=p=>{btn.textContent=p?"❚❚":"▶";btn.setAttribute("aria-label",p?"Pause music":"Play music")};
+  window.onYouTubeIframeAPIReady=()=>{
+    yp=new YT.Player("ytp",{videoId:"WPEVYK6ijhw",playerVars:{start:START,end:END,controls:0,disablekb:1,modestbranding:1,rel:0,playsinline:1},
+      events:{onReady:()=>{ready=true;yp.setVolume(45);if(wanted)yp.playVideo()},
+        onStateChange:e=>{if(e.data===YT.PlayerState.ENDED){yp.seekTo(START,true);yp.playVideo()}setBtn(e.data===YT.PlayerState.PLAYING)}}});
+    setInterval(()=>{if(ready&&yp.getPlayerState&&yp.getPlayerState()===1&&yp.getCurrentTime()>=END)yp.seekTo(START,true)},500);
+  };
+  const tag=document.createElement("script");tag.src="https://www.youtube.com/iframe_api";document.head.appendChild(tag);
+  /* browsers block sound until the first tap, so the music starts on her first tap anywhere */
+  const first=e=>{if(e.target.closest&&e.target.closest("#mbtn"))return;wanted=true;if(ready)yp.playVideo();removeEventListener("pointerdown",first,true)};
+  addEventListener("pointerdown",first,true);
+  btn.addEventListener("click",e=>{e.stopPropagation();removeEventListener("pointerdown",first,true);if(!ready){wanted=!wanted;return}
+    yp.getPlayerState()===1?yp.pauseVideo():yp.playVideo()});
 }
 </script>
 </body>
